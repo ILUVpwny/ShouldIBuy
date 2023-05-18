@@ -41,6 +41,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.LongStream;
@@ -48,13 +50,12 @@ import java.util.stream.LongStream;
 @Service
 public class WebhookService {
 
+    private final HashMap<String, Long> next_update = new HashMap<>();
+    private final HashMap<String, Double> last_min = new HashMap<>();
+    private final HashMap<String, Double> last_max = new HashMap<>();
+    private final HashMap<String, TimeSeries> next_series = new HashMap<>();
     public GoogleCloudDialogflowV2WebhookResponse test(JSONObject param){
-        try{
-            return GoogleApiUtility.createImageResponse(LinebotApplication.PUBLICDOMAIN + "/image?ID=" + UUID.randomUUID());
-        }catch (Exception e){
-            e.printStackTrace();
-            return null;
-        }
+        return null;
     }
 
     public GoogleCloudDialogflowV2WebhookResponse rot(JSONObject param){
@@ -100,44 +101,70 @@ public class WebhookService {
 
     public byte[] getExchangeImage(String from, String to) throws IOException {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy/MM/dd");
-        JSONObject latest;
-        try {
-            latest = new JSONObject(IOUtils.toString(new URL("https://v6.exchangerate-api.com/v6/7dc810bca653d8fd84681c53/latest/" + from), StandardCharsets.UTF_8));
-        }catch (FileNotFoundException e){
-            return null;
-        }
 
-        if (latest.getString("result").equals("error") || !latest.getJSONObject("conversion_rates").has(to)){
-            return null;
-        }
-
-        LocalDate finish =
-                Instant.ofEpochMilli(((Integer) latest.get("time_last_update_unix")).longValue()*1000)
-                        .atZone(ZoneId.of("UTC"))
-                        .toLocalDate();
-
-        List<LocalDate> totalDates =
-                LongStream.iterate(0, i -> i - 1)
-                        .limit(30).mapToObj(finish::plusDays).toList();
-
-        var series = new TimeSeries("line");
+        TimeSeries series = new TimeSeries("line");
         double min = Double.MAX_VALUE;
         double max = Double.MIN_VALUE;
-        for (int i = 29; i >= 0; i--) {
-            LocalDate date = totalDates.get(i);
-            JSONObject res;
+
+        if (next_update.getOrDefault(from+"-"+to, 0L) < Instant.now().getEpochSecond()) {
+            System.out.println("TEST1");
+            JSONObject latest;
             try {
-                res = new JSONObject(IOUtils.toString(new URL("https://v6.exchangerate-api.com/v6/7dc810bca653d8fd84681c53/history/" + from + "/" + date.format(formatter)), StandardCharsets.UTF_8));
+                latest = new JSONObject(IOUtils.toString(new URL("https://v6.exchangerate-api.com/v6/7dc810bca653d8fd84681c53/latest/" + from), StandardCharsets.UTF_8));
             }catch (FileNotFoundException e){
                 return null;
             }
-            if (res.getString("result").equals("error") || !res.getJSONObject("conversion_rates").has(to)){
+
+            if (latest.getString("result").equals("error") || !latest.getJSONObject("conversion_rates").has(to)){
                 return null;
             }
-            JSONObject rates = (JSONObject) res.get("conversion_rates");
-            min = Math.min(min, rates.getDouble(to));
-            max = Math.max(max, rates.getDouble(to));
-            series.add(new TimeSeriesDataItem(new Day(date.getDayOfMonth(), date.getMonthValue(), date.getYear()), BigDecimal.valueOf(rates.getDouble(to))));
+
+            LocalDate finish =
+                    Instant.ofEpochMilli(((Integer) latest.get("time_last_update_unix")).longValue()*1000)
+                            .atZone(ZoneId.of("UTC"))
+                            .toLocalDate();
+
+            List<LocalDate> totalDates =
+                    LongStream.iterate(0, i -> i - 1)
+                            .limit(30).mapToObj(finish::plusDays).toList();
+
+            ArrayList<JSONObject> reses = new ArrayList<>();
+            totalDates.parallelStream().forEach(localDate -> {
+                try {
+                    System.out.println("test");
+                    reses.add(new JSONObject(IOUtils.toString(new URL("https://v6.exchangerate-api.com/v6/7dc810bca653d8fd84681c53/history/" + from + "/" + localDate.format(formatter)), StandardCharsets.UTF_8)));
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            });
+            reses.sort((o1, o2) -> {
+                try {
+                    LocalDate d1 = LocalDate.of(o1.getInt("year"), o1.getInt("month")-1, o1.getInt("day"));
+                    LocalDate d2 = LocalDate.of(o2.getInt("year"), o2.getInt("month")-1, o2.getInt("day"));
+                    return -d1.compareTo(d2);
+                }catch (Exception e){
+                    e.printStackTrace();
+                    return -1;
+                }
+            });
+            System.out.println(reses.get(0));
+            for (int i = 29; i >= 0; i--) {
+                JSONObject res = reses.get(i);
+                LocalDate date = totalDates.get(i);
+                JSONObject rates = (JSONObject) res.get("conversion_rates");
+                min = Math.min(min, rates.getDouble(to));
+                max = Math.max(max, rates.getDouble(to));
+                series.add(new TimeSeriesDataItem(new Day(date.getDayOfMonth(), date.getMonthValue(), date.getYear()), BigDecimal.valueOf(rates.getDouble(to))));
+            }
+            next_update.put(from+"-"+to, latest.getLong("time_next_update_unix"));
+            last_min.put(from+"-"+to, min);
+            last_max.put(from+"-"+to, max);
+            next_series.put(from+"-"+to, series);
+        }else {
+            System.out.println("TEST2");
+            min = last_min.get(from+"-"+to);
+            max = last_max.get(from+"-"+to);
+            series = next_series.get(from+"-"+to);
         }
 
         var dataset = new TimeSeriesCollection();

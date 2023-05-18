@@ -19,7 +19,6 @@ public class Webhook {
 
     @PostMapping(produces = {MediaType.APPLICATION_JSON_VALUE})
     public GoogleCloudDialogflowV2WebhookResponse webhook(@RequestBody String inputJson){
-
         JSONObject requestBody = new JSONObject(inputJson);
 
         JSONObject queryResult = requestBody.getJSONObject("queryResult");
