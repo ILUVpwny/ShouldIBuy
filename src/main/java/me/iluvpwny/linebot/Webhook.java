@@ -27,8 +27,6 @@ public class Webhook {
         String intent_name = intent.getString("displayName");
         JSONObject param = queryResult.getJSONObject("parameters");
 
-        System.out.println(intent_name);
-
         return switch (intent_name) {
             case "test" -> webhookService.test(param);
             case "คุ้ม - คำนวณ" -> webhookService.rot(param);

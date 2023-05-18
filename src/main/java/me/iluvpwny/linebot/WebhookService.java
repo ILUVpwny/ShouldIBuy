@@ -116,7 +116,6 @@ public class WebhookService {
         double max = Double.MIN_VALUE;
 
         if (next_update.getOrDefault(from+"-"+to, 0L) < Instant.now().getEpochSecond()) {
-            System.out.println("TEST1");
             JSONObject latest;
             try {
                 latest = new JSONObject(IOUtils.toString(new URL("https://v6.exchangerate-api.com/v6/7dc810bca653d8fd84681c53/latest/" + from), StandardCharsets.UTF_8));
@@ -140,7 +139,6 @@ public class WebhookService {
             ArrayList<JSONObject> reses = new ArrayList<>();
             totalDates.parallelStream().forEach(localDate -> {
                 try {
-                    System.out.println("test");
                     reses.add(new JSONObject(IOUtils.toString(new URL("https://v6.exchangerate-api.com/v6/7dc810bca653d8fd84681c53/history/" + from + "/" + localDate.format(formatter)), StandardCharsets.UTF_8)));
                 } catch (IOException e) {
                     e.printStackTrace();
@@ -156,7 +154,6 @@ public class WebhookService {
                     return -1;
                 }
             });
-            System.out.println(reses.get(0));
             for (int i = 29; i >= 0; i--) {
                 JSONObject res = reses.get(i);
                 LocalDate date = totalDates.get(i);
@@ -170,7 +167,6 @@ public class WebhookService {
             last_max.put(from+"-"+to, max);
             next_series.put(from+"-"+to, series);
         }else {
-            System.out.println("TEST2");
             min = last_min.get(from+"-"+to);
             max = last_max.get(from+"-"+to);
             series = next_series.get(from+"-"+to);
