@@ -7,9 +7,23 @@ import org.apache.commons.io.IOUtils;
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartUtils;
 import org.jfree.chart.JFreeChart;
+import org.jfree.chart.axis.DateAxis;
 import org.jfree.chart.axis.NumberAxis;
+import org.jfree.chart.labels.ItemLabelAnchor;
+import org.jfree.chart.labels.ItemLabelPosition;
+import org.jfree.chart.labels.StandardCategoryItemLabelGenerator;
+import org.jfree.chart.labels.StandardXYItemLabelGenerator;
 import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.chart.plot.XYPlot;
+import org.jfree.chart.renderer.category.LineAndShapeRenderer;
+import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
+import org.jfree.chart.ui.RectangleInsets;
+import org.jfree.chart.ui.TextAnchor;
+import org.jfree.data.Range;
+import org.jfree.data.time.Day;
+import org.jfree.data.time.TimeSeries;
+import org.jfree.data.time.TimeSeriesCollection;
+import org.jfree.data.time.TimeSeriesDataItem;
 import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
 import org.json.JSONObject;
@@ -21,6 +35,8 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.text.DecimalFormat;
+import java.text.SimpleDateFormat;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -104,7 +120,9 @@ public class WebhookService {
                 LongStream.iterate(0, i -> i - 1)
                         .limit(30).mapToObj(finish::plusDays).toList();
 
-        var series = new XYSeries("line");
+        var series = new TimeSeries("line");
+        double min = Double.MAX_VALUE;
+        double max = Double.MIN_VALUE;
         for (int i = 29; i >= 0; i--) {
             LocalDate date = totalDates.get(i);
             JSONObject res;
@@ -117,21 +135,34 @@ public class WebhookService {
                 return null;
             }
             JSONObject rates = (JSONObject) res.get("conversion_rates");
-            series.add(-i, (BigDecimal) rates.get(to));
+            min = Math.min(min, rates.getDouble(to));
+            max = Math.max(max, rates.getDouble(to));
+            series.add(new TimeSeriesDataItem(new Day(date.getDayOfMonth(), date.getMonthValue(), date.getYear()), BigDecimal.valueOf(rates.getDouble(to))));
         }
 
-        var dataset = new XYSeriesCollection();
+        var dataset = new TimeSeriesCollection();
         dataset.addSeries(series);
 
-        JFreeChart lineChart = ChartFactory.createXYLineChart(from+"-"+to, "วัน", to, dataset, PlotOrientation.VERTICAL, false, false, false);
+        JFreeChart lineChart = ChartFactory.createTimeSeriesChart(from+"-"+to, "วัน", to, dataset, false, false, false);
 
         XYPlot plot = (XYPlot) lineChart.getPlot();
-        plot.getRangeAxis().setAutoRange(true);
+        double diff = max - min;
+        plot.getRangeAxis().setRange(new Range(min-diff*0.1, max+diff*0.25));
         ((NumberAxis)plot.getRangeAxis()).setAutoRangeIncludesZero(false);
-
+        ((NumberAxis)plot.getRangeAxis()).setAutoRangeIncludesZero(false);
+        DateAxis dateAxis = new DateAxis();
+        dateAxis.setDateFormatOverride(new SimpleDateFormat("d MMM"));
+        plot.setDomainAxis(dateAxis);
+        XYLineAndShapeRenderer renderer = (XYLineAndShapeRenderer) plot.getRenderer();
+        renderer.setDefaultShapesVisible(true);
+        renderer.setDefaultItemLabelsVisible(true);
+        renderer.setDefaultPositiveItemLabelPosition(new ItemLabelPosition(ItemLabelAnchor.OUTSIDE12, TextAnchor.TOP_CENTER, TextAnchor.HALF_ASCENT_CENTER, -Math.PI / 2));
+        renderer.setItemLabelInsets(new RectangleInsets(20.0, 20.0, 20.0, 20.0));
+        DecimalFormat decimalFormat = new DecimalFormat("#.##");
+        renderer.setDefaultItemLabelGenerator(new StandardXYItemLabelGenerator("{2}", decimalFormat, decimalFormat));
 
         ByteArrayOutputStream bas = new ByteArrayOutputStream();
-        ChartUtils.writeChartAsPNG(bas, lineChart, 600, 400);
+        ChartUtils.writeChartAsPNG(bas, lineChart, 800, 400);
         return bas.toByteArray();
     }
 
