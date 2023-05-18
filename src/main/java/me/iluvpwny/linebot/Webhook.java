@@ -34,6 +34,7 @@ public class Webhook {
             case "คุ้ม - คำนวณ" -> webhookService.rot(param);
             case "กราฟเงิน" -> webhookService.moneyGraph(param);
             case "ค่าเงิน - คำนวณ" -> webhookService.moneyExchange(param);
+            case "คติเตือนใจ" -> webhookService.mindfulness(param);
             default -> null;
         };
     }

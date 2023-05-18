@@ -11,11 +11,8 @@ import org.jfree.chart.axis.DateAxis;
 import org.jfree.chart.axis.NumberAxis;
 import org.jfree.chart.labels.ItemLabelAnchor;
 import org.jfree.chart.labels.ItemLabelPosition;
-import org.jfree.chart.labels.StandardCategoryItemLabelGenerator;
 import org.jfree.chart.labels.StandardXYItemLabelGenerator;
-import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.chart.plot.XYPlot;
-import org.jfree.chart.renderer.category.LineAndShapeRenderer;
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
 import org.jfree.chart.ui.RectangleInsets;
 import org.jfree.chart.ui.TextAnchor;
@@ -24,14 +21,11 @@ import org.jfree.data.time.Day;
 import org.jfree.data.time.TimeSeries;
 import org.jfree.data.time.TimeSeriesCollection;
 import org.jfree.data.time.TimeSeriesDataItem;
-import org.jfree.data.xy.XYSeries;
-import org.jfree.data.xy.XYSeriesCollection;
 import org.json.JSONObject;
 import org.springframework.stereotype.Service;
 
-import java.io.ByteArrayOutputStream;
-import java.io.FileNotFoundException;
-import java.io.IOException;
+import java.io.*;
+import java.lang.reflect.Array;
 import java.math.BigDecimal;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -41,10 +35,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.LongStream;
 
 @Service
@@ -54,6 +45,24 @@ public class WebhookService {
     private final HashMap<String, Double> last_min = new HashMap<>();
     private final HashMap<String, Double> last_max = new HashMap<>();
     private final HashMap<String, TimeSeries> next_series = new HashMap<>();
+
+    private final List<String> mindfullSpeech;
+
+    public WebhookService() {
+        ArrayList<String> list = new ArrayList<>();
+
+        try (BufferedReader br = new BufferedReader(new FileReader("mindfullness.txt"))) {
+            String line = br.readLine();
+            while (line != null) {
+                list.add(line);
+                line = br.readLine();
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        mindfullSpeech = list;
+    }
+
     public GoogleCloudDialogflowV2WebhookResponse test(JSONObject param){
         return null;
     }
@@ -216,5 +225,9 @@ public class WebhookService {
                 .add("- จำนวน: " + from_amount + " " + from)
                 .add("- ได้: " + Math.round(to_amount*100)/100.0 + " " + to);
         return GoogleApiUtility.wrapPayload(bubbleFactory.build());
+    }
+
+    public GoogleCloudDialogflowV2WebhookResponse mindfulness(JSONObject param) {
+        return GoogleApiUtility.createImageResponse(mindfullSpeech.get(new Random().nextInt(mindfullSpeech.size())));
     }
 }
