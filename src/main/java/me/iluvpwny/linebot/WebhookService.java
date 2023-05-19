@@ -47,6 +47,7 @@ public class WebhookService {
 
     private final List<String> mindfullSpeech;
 
+    //***************************************************Service*******************************************************
     public WebhookService() {
         ArrayList<String> list = new ArrayList<>();
 
@@ -64,8 +65,33 @@ public class WebhookService {
         new File("data/image").mkdirs();
     }
 
-    public GoogleCloudDialogflowV2WebhookResponse test(JSONObject param){
-        return null;
+    public GoogleCloudDialogflowV2WebhookResponse moneyExchange(JSONObject param){
+        String to = param.getString("to");
+        double from_amount = param.getJSONObject("from").getDouble("amount");
+        String from = param.getJSONObject("from").getString("currency");
+
+        JSONObject conv;
+        try {
+            conv = new JSONObject(IOUtils.toString(new URL("https://v6.exchangerate-api.com/v6/7dc810bca653d8fd84681c53/pair/" + from + "/" + to + "/" + from_amount), StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            e.printStackTrace();
+            return null;
+        }
+
+        if (conv.getString("result").equals("error")){
+            return null;
+        }
+
+        double to_amount = conv.getDouble("conversion_result");
+        BubbleFactory bubbleFactory = new BubbleFactory("แลกเปลี่ยนเงิน");
+        bubbleFactory.add("จาก " + from + " เป็น " + to)
+                .add("- จำนวน: " + from_amount + " " + from)
+                .add("- ได้: " + Math.round(to_amount*100)/100.0 + " " + to);
+        return GoogleApiUtility.wrapPayload(bubbleFactory.build());
+    }
+
+    public GoogleCloudDialogflowV2WebhookResponse mindfulness(JSONObject param) {
+        return GoogleApiUtility.createImageResponse(mindfullSpeech.get(new Random().nextInt(mindfullSpeech.size())));
     }
 
     public GoogleCloudDialogflowV2WebhookResponse rot(JSONObject param){
@@ -117,6 +143,7 @@ public class WebhookService {
         return GoogleApiUtility.createImageResponse(uploadToImgure(image, "9f0f88e1f3ba532"));
     }
 
+    //***************************************************Utility*******************************************************
     public String uploadToImgure(byte[] image, String clientID) throws IOException {
         URL url;
         url = new URL("https://api.imgur.com/3/image");
@@ -267,35 +294,5 @@ public class WebhookService {
             e.printStackTrace();
             return false;
         }
-    }
-
-
-    public GoogleCloudDialogflowV2WebhookResponse moneyExchange(JSONObject param){
-        String to = param.getString("to");
-        double from_amount = param.getJSONObject("from").getDouble("amount");
-        String from = param.getJSONObject("from").getString("currency");
-
-        JSONObject conv;
-        try {
-            conv = new JSONObject(IOUtils.toString(new URL("https://v6.exchangerate-api.com/v6/7dc810bca653d8fd84681c53/pair/" + from + "/" + to + "/" + from_amount), StandardCharsets.UTF_8));
-        } catch (IOException e) {
-            e.printStackTrace();
-            return null;
-        }
-
-        if (conv.getString("result").equals("error")){
-            return null;
-        }
-
-        double to_amount = conv.getDouble("conversion_result");
-        BubbleFactory bubbleFactory = new BubbleFactory("แลกเปลี่ยนเงิน");
-        bubbleFactory.add("จาก " + from + " เป็น " + to)
-                .add("- จำนวน: " + from_amount + " " + from)
-                .add("- ได้: " + Math.round(to_amount*100)/100.0 + " " + to);
-        return GoogleApiUtility.wrapPayload(bubbleFactory.build());
-    }
-
-    public GoogleCloudDialogflowV2WebhookResponse mindfulness(JSONObject param) {
-        return GoogleApiUtility.createImageResponse(mindfullSpeech.get(new Random().nextInt(mindfullSpeech.size())));
     }
 }
