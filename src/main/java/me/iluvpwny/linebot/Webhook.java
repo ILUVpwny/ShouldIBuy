@@ -35,20 +35,4 @@ public class Webhook {
             default -> null;
         };
     }
-
-//    @GetMapping(
-//            value = "/image",
-//            produces = MediaType.IMAGE_PNG_VALUE
-//    )
-//    public @ResponseBody byte[] getImage(@RequestParam(required = false) String ID, @RequestParam String from, @RequestParam String to) throws IOException {
-//        byte[] bytes = webhookService.getExchangeImage(from, to);
-//        System.out.println("TESTTEST");
-//        if (bytes == null){
-//            InputStream in = getClass()
-//                    .getResourceAsStream("/image.png");
-//            assert in != null;
-//            return IOUtils.toByteArray(in);
-//        }
-//        return bytes;
-//    }
 }

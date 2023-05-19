@@ -22,6 +22,7 @@ import org.jfree.data.time.TimeSeries;
 import org.jfree.data.time.TimeSeriesCollection;
 import org.jfree.data.time.TimeSeriesDataItem;
 import org.json.JSONObject;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 
 import javax.imageio.ImageIO;
@@ -46,9 +47,9 @@ import java.util.stream.LongStream;
 public class WebhookService {
 
     private final List<String> mindfullSpeech;
-
+    private final byte[] errorImage;
     //***************************************************Service*******************************************************
-    public WebhookService() {
+    public WebhookService() throws IOException {
         ArrayList<String> list = new ArrayList<>();
 
         try (BufferedReader br = new BufferedReader(new FileReader("mindfullness.txt"))) {
@@ -61,6 +62,10 @@ public class WebhookService {
             throw new RuntimeException(e);
         }
         mindfullSpeech = list;
+
+        InputStream in = getClass().getResourceAsStream("/image.png");
+        assert in != null;
+        errorImage = IOUtils.toByteArray(in);
 
         new File("data/image").mkdirs();
     }
@@ -136,9 +141,6 @@ public class WebhookService {
             e.printStackTrace();
             return null;
         }
-        if (image == null){
-            return null;
-        }
 
         return GoogleApiUtility.createImageResponse(uploadToImgure(image, "9f0f88e1f3ba532"));
     }
@@ -179,6 +181,7 @@ public class WebhookService {
 
         return new JSONObject(stb.toString()).getJSONObject("data").getString("link");
     }
+    @NonNull
     public byte[] getExchangeImage(String from, String to) throws IOException {
 
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy/MM/dd");
@@ -199,7 +202,7 @@ public class WebhookService {
             saveJson(historicalData, filename);
         }
         if (historicalData == null){
-            return null;
+            return errorImage;
         }
         LocalDate finish =
                 Instant.ofEpochMilli(( historicalData.getLong("time_last_update_unix"))*1000)
