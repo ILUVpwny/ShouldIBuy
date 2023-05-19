@@ -28,7 +28,6 @@ public class Webhook {
         JSONObject param = queryResult.getJSONObject("parameters");
 
         return switch (intent_name) {
-            case "test" -> webhookService.test(param);
             case "คุ้ม - คำนวณ" -> webhookService.rot(param);
             case "กราฟเงิน" -> webhookService.moneyGraph(param);
             case "ค่าเงิน - คำนวณ" -> webhookService.moneyExchange(param);

@@ -89,6 +89,8 @@ public class WebhookService {
             factory.add("สินค้า 1 คุ้มกว่านะ");
         }else if (rot1 < rot2) {
             factory.add("สินค้า 2 คุ้มกว่านะ");
+        }else{
+            factory.add("สินค้าเท่ากันนะ");
         }
 
         return GoogleApiUtility.wrapPayload(factory.build());
@@ -141,6 +143,7 @@ public class WebhookService {
         for (int i = 29; i >= 0; i--) {
             LocalDate date = totalDates.get(i);
             double value = historicalData.getJSONObject(formatter.format(date)).getJSONObject("conversion_rates").getDouble(to);
+            System.out.println(to + " ----");
 
             min = Math.min(min, value);
             max = Math.max(max, value);
