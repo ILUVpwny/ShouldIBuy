@@ -25,8 +25,6 @@ import org.json.JSONObject;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
-import java.lang.reflect.Array;
-import java.math.BigDecimal;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
@@ -36,15 +34,12 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
 @Service
+@SuppressWarnings({"ResultOfMethodCallIgnored", "UnusedReturnValue"})
 public class WebhookService {
-
-    private final HashMap<String, Long> next_update = new HashMap<>();
-    private final HashMap<String, Double> last_min = new HashMap<>();
-    private final HashMap<String, Double> last_max = new HashMap<>();
-    private final HashMap<String, TimeSeries> next_series = new HashMap<>();
 
     private final List<String> mindfullSpeech;
 
@@ -61,6 +56,8 @@ public class WebhookService {
             throw new RuntimeException(e);
         }
         mindfullSpeech = list;
+
+        new File("data").mkdirs();
     }
 
     public GoogleCloudDialogflowV2WebhookResponse test(JSONObject param){
@@ -111,68 +108,46 @@ public class WebhookService {
     public byte[] getExchangeImage(String from, String to) throws IOException {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
+        String filename = "data/" + from + "_" + to + ".json";
+        JSONObject historicalData;
+
+        File dateFile = new File(filename);
+        if (dateFile.exists()) {
+            FileReader dataReader = new FileReader(filename);
+            historicalData = new JSONObject(IOUtils.toString(dataReader));
+            if (historicalData.getLong("time_next_update_unix") < Instant.now().getEpochSecond()) {
+                historicalData = requestNewData(from, to);
+                saveJson(historicalData, filename);
+            }
+            dataReader.close();
+        }else{
+            historicalData = requestNewData(from, to);
+            saveJson(historicalData, filename);
+        }
+
+        LocalDate finish =
+                Instant.ofEpochMilli(( historicalData.getLong("time_last_update_unix"))*1000)
+                        .atZone(ZoneId.of("UTC"))
+                        .toLocalDate();
+
+        List<LocalDate> totalDates =
+                LongStream.iterate(0, i -> i - 1)
+                        .limit(30).mapToObj(finish::plusDays).toList();
+
         TimeSeries series = new TimeSeries("line");
         double min = Double.MAX_VALUE;
         double max = Double.MIN_VALUE;
 
-        if (next_update.getOrDefault(from+"-"+to, 0L) < Instant.now().getEpochSecond()) {
-            JSONObject latest;
-            try {
-                latest = new JSONObject(IOUtils.toString(new URL("https://v6.exchangerate-api.com/v6/7dc810bca653d8fd84681c53/latest/" + from), StandardCharsets.UTF_8));
-            }catch (FileNotFoundException e){
-                return null;
-            }
+        for (int i = 29; i >= 0; i--) {
+            LocalDate date = totalDates.get(i);
+            double value = historicalData.getJSONObject(formatter.format(date)).getJSONObject("conversion_rates").getDouble(to);
 
-            if (latest.getString("result").equals("error") || !latest.getJSONObject("conversion_rates").has(to)){
-                return null;
-            }
-
-            LocalDate finish =
-                    Instant.ofEpochMilli(((Integer) latest.get("time_last_update_unix")).longValue()*1000)
-                            .atZone(ZoneId.of("UTC"))
-                            .toLocalDate();
-
-            List<LocalDate> totalDates =
-                    LongStream.iterate(0, i -> i - 1)
-                            .limit(30).mapToObj(finish::plusDays).toList();
-
-            ArrayList<JSONObject> reses = new ArrayList<>();
-            totalDates.parallelStream().forEach(localDate -> {
-                try {
-                    reses.add(new JSONObject(IOUtils.toString(new URL("https://v6.exchangerate-api.com/v6/7dc810bca653d8fd84681c53/history/" + from + "/" + localDate.format(formatter)), StandardCharsets.UTF_8)));
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            });
-            reses.sort((o1, o2) -> {
-                try {
-                    LocalDate d1 = LocalDate.of(o1.getInt("year"), o1.getInt("month")-1, o1.getInt("day"));
-                    LocalDate d2 = LocalDate.of(o2.getInt("year"), o2.getInt("month")-1, o2.getInt("day"));
-                    return -d1.compareTo(d2);
-                }catch (Exception e){
-                    e.printStackTrace();
-                    return -1;
-                }
-            });
-            for (int i = 29; i >= 0; i--) {
-                JSONObject res = reses.get(i);
-                LocalDate date = totalDates.get(i);
-                JSONObject rates = (JSONObject) res.get("conversion_rates");
-                min = Math.min(min, rates.getDouble(to));
-                max = Math.max(max, rates.getDouble(to));
-                series.add(new TimeSeriesDataItem(new Day(date.getDayOfMonth(), date.getMonthValue(), date.getYear()), BigDecimal.valueOf(rates.getDouble(to))));
-            }
-            next_update.put(from+"-"+to, latest.getLong("time_next_update_unix"));
-            last_min.put(from+"-"+to, min);
-            last_max.put(from+"-"+to, max);
-            next_series.put(from+"-"+to, series);
-        }else {
-            min = last_min.get(from+"-"+to);
-            max = last_max.get(from+"-"+to);
-            series = next_series.get(from+"-"+to);
+            min = Math.min(min, value);
+            max = Math.max(max, value);
+            series.add(new TimeSeriesDataItem(new Day(date.getDayOfMonth(), date.getMonthValue(), date.getYear()), value));
         }
 
-        var dataset = new TimeSeriesCollection();
+        TimeSeriesCollection dataset = new TimeSeriesCollection();
         dataset.addSeries(series);
 
         JFreeChart lineChart = ChartFactory.createTimeSeriesChart(from+"-"+to, "วัน", to, dataset, false, false, false);
@@ -197,6 +172,48 @@ public class WebhookService {
         ChartUtils.writeChartAsPNG(bas, lineChart, 800, 400);
         return bas.toByteArray();
     }
+
+    public JSONObject requestNewData(String from, String to) throws IOException {
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy/MM/dd");
+
+        JSONObject latest = new JSONObject(IOUtils.toString(new URL("https://v6.exchangerate-api.com/v6/7dc810bca653d8fd84681c53/latest/" + from), StandardCharsets.UTF_8));
+        long nextUpdate = latest.getLong("time_next_update_unix");
+        long lastUpdate = latest.getLong("time_last_update_unix");
+
+        LocalDate finish =
+                Instant.ofEpochMilli(((Integer) latest.get("time_last_update_unix")).longValue()*1000)
+                        .atZone(ZoneId.of("UTC"))
+                        .toLocalDate();
+
+        List<LocalDate> totalDates =
+                LongStream.iterate(0, i -> i - 1)
+                        .limit(30).mapToObj(finish::plusDays).toList();
+
+        JSONObject historicalData = new JSONObject(totalDates.parallelStream().map(date -> {
+                                            try {
+                                                return new AbstractMap.SimpleEntry<>(formatter.format(date), new JSONObject(IOUtils.toString(new URL("https://v6.exchangerate-api.com/v6/7dc810bca653d8fd84681c53/history/" + from + "/" + date.format(formatter)), StandardCharsets.UTF_8)));
+                                            } catch (IOException e) {
+                                                throw new RuntimeException(e);
+                                            }
+                                        }).collect(Collectors.toMap(AbstractMap.SimpleEntry::getKey, AbstractMap.SimpleEntry::getValue)));
+
+        historicalData.put("time_next_update_unix", nextUpdate);
+        historicalData.put("time_last_update_unix", lastUpdate);
+        saveJson(historicalData, "data/" + from + "_" + to + ".json");
+
+        return historicalData;
+    }
+
+    public boolean saveJson(JSONObject json, String filename){
+        try(FileWriter file = new FileWriter(filename)) {
+            file.write(json.toString());
+            return true;
+        }catch (Exception e){
+            e.printStackTrace();
+            return false;
+        }
+    }
+
 
     public GoogleCloudDialogflowV2WebhookResponse moneyExchange(JSONObject param){
         String to = param.getString("to");
