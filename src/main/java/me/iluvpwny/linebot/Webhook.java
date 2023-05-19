@@ -18,7 +18,7 @@ public class Webhook {
     private WebhookService webhookService;
 
     @PostMapping(produces = {MediaType.APPLICATION_JSON_VALUE})
-    public GoogleCloudDialogflowV2WebhookResponse webhook(@RequestBody String inputJson){
+    public GoogleCloudDialogflowV2WebhookResponse webhook(@RequestBody String inputJson) throws IOException {
         JSONObject requestBody = new JSONObject(inputJson);
 
         JSONObject queryResult = requestBody.getJSONObject("queryResult");
@@ -36,18 +36,19 @@ public class Webhook {
         };
     }
 
-    @GetMapping(
-            value = "/image",
-            produces = MediaType.IMAGE_PNG_VALUE
-    )
-    public @ResponseBody byte[] getImage(@RequestParam(required = false) String ID, @RequestParam String from, @RequestParam String to) throws IOException {
-        byte[] bytes = webhookService.getExchangeImage(from, to);
-        if (bytes == null){
-            InputStream in = getClass()
-                    .getResourceAsStream("/image.png");
-            assert in != null;
-            return IOUtils.toByteArray(in);
-        }
-        return bytes;
-    }
+//    @GetMapping(
+//            value = "/image",
+//            produces = MediaType.IMAGE_PNG_VALUE
+//    )
+//    public @ResponseBody byte[] getImage(@RequestParam(required = false) String ID, @RequestParam String from, @RequestParam String to) throws IOException {
+//        byte[] bytes = webhookService.getExchangeImage(from, to);
+//        System.out.println("TESTTEST");
+//        if (bytes == null){
+//            InputStream in = getClass()
+//                    .getResourceAsStream("/image.png");
+//            assert in != null;
+//            return IOUtils.toByteArray(in);
+//        }
+//        return bytes;
+//    }
 }

@@ -24,8 +24,12 @@ import org.jfree.data.time.TimeSeriesDataItem;
 import org.json.JSONObject;
 import org.springframework.stereotype.Service;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.*;
+import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
@@ -57,7 +61,7 @@ public class WebhookService {
         }
         mindfullSpeech = list;
 
-        new File("data").mkdirs();
+        new File("data/image").mkdirs();
     }
 
     public GoogleCloudDialogflowV2WebhookResponse test(JSONObject param){
@@ -96,18 +100,60 @@ public class WebhookService {
         return GoogleApiUtility.wrapPayload(factory.build());
     }
 
-    public GoogleCloudDialogflowV2WebhookResponse moneyGraph(JSONObject param){
+    public GoogleCloudDialogflowV2WebhookResponse moneyGraph(JSONObject param) throws IOException {
         String from = param.getString("from");
         String to = param.getString("to");
+        byte[] image;
         try {
-            return GoogleApiUtility.createImageResponse(LinebotApplication.PUBLICDOMAIN + "/image?ID=" + UUID.randomUUID() + "&from=" + from + "&to=" + to);
-        } catch (Exception e) {
+            image = getExchangeImage(from, to);
+        } catch (IOException e) {
             e.printStackTrace();
             return null;
         }
+        if (image == null){
+            return null;
+        }
+
+        return GoogleApiUtility.createImageResponse(uploadToImgure(image, "9f0f88e1f3ba532"));
     }
 
+    public String uploadToImgure(byte[] image, String clientID) throws IOException {
+        URL url;
+        url = new URL("https://api.imgur.com/3/image");
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+
+
+        String dataImage = Base64.getEncoder().encodeToString(image);
+        String data = URLEncoder.encode("image", StandardCharsets.UTF_8) + "="
+                + URLEncoder.encode(dataImage, StandardCharsets.UTF_8);
+
+        conn.setDoOutput(true);
+        conn.setDoInput(true);
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Authorization", "Client-ID " + clientID);
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type",
+                "application/x-www-form-urlencoded");
+
+        conn.connect();
+        StringBuilder stb = new StringBuilder();
+        OutputStreamWriter wr = new OutputStreamWriter(conn.getOutputStream());
+        wr.write(data);
+        wr.flush();
+
+        BufferedReader rd = new BufferedReader(
+                new InputStreamReader(conn.getInputStream()));
+        String line;
+        while ((line = rd.readLine()) != null) {
+            stb.append(line).append("\n");
+        }
+        wr.close();
+        rd.close();
+
+        return new JSONObject(stb.toString()).getJSONObject("data").getString("link");
+    }
     public byte[] getExchangeImage(String from, String to) throws IOException {
+
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
         String filename = "data/" + from + "_" + to + ".json";
@@ -121,12 +167,13 @@ public class WebhookService {
                 historicalData = requestNewData(from, to);
                 saveJson(historicalData, filename);
             }
-            dataReader.close();
         }else{
             historicalData = requestNewData(from, to);
             saveJson(historicalData, filename);
         }
-
+        if (historicalData == null){
+            return null;
+        }
         LocalDate finish =
                 Instant.ofEpochMilli(( historicalData.getLong("time_last_update_unix"))*1000)
                         .atZone(ZoneId.of("UTC"))
@@ -143,7 +190,6 @@ public class WebhookService {
         for (int i = 29; i >= 0; i--) {
             LocalDate date = totalDates.get(i);
             double value = historicalData.getJSONObject(formatter.format(date)).getJSONObject("conversion_rates").getDouble(to);
-            System.out.println(to + " ----");
 
             min = Math.min(min, value);
             max = Math.max(max, value);
@@ -173,13 +219,19 @@ public class WebhookService {
 
         ByteArrayOutputStream bas = new ByteArrayOutputStream();
         ChartUtils.writeChartAsPNG(bas, lineChart, 800, 400);
+
         return bas.toByteArray();
     }
 
     public JSONObject requestNewData(String from, String to) throws IOException {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
-        JSONObject latest = new JSONObject(IOUtils.toString(new URL("https://v6.exchangerate-api.com/v6/7dc810bca653d8fd84681c53/latest/" + from), StandardCharsets.UTF_8));
+        JSONObject latest;
+        try {
+            latest = new JSONObject(IOUtils.toString(new URL("https://v6.exchangerate-api.com/v6/7dc810bca653d8fd84681c53/latest/" + from), StandardCharsets.UTF_8));
+        }catch (FileNotFoundException e) {
+            return null;
+        }
         long nextUpdate = latest.getLong("time_next_update_unix");
         long lastUpdate = latest.getLong("time_last_update_unix");
 
